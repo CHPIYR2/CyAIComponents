@@ -1,0 +1,14 @@
+{
+    "wazuh_url": "https://202.5.255.179:9200/wazuh-alerts-*/_search",
+    "username": "admin",
+    "password": "L8o22snYOVqafDILU+wBFHTNld6Vu*Ht",
+    "wazuh_api_url": "https://202.5.255.179:55000",
+    "username_api": "wazuh",
+    "password_api": "kUKVmv9Yxoz?3xYR9Y66w7Qk1*6Y4eO3",
+    "increment_hours": 1,
+    "elasticsearch_url": "http://202.5.253.78:9200/wazuh_deepcase/_doc/",
+    "model_path": "/home/ubuntu/allcomponents/DeepCASE/eventDetection/model/wazuhDetectionModelv240531.pth",
+    "agents": ["TL_Laptop", "Falcon_LG_NB", "chpiyr2-host", "SWIFT_P", "Eric-Ubuntu", "EricMao-Winsows", "wazuhAgentVM1", "wazuhAgentVM2", "202.5.253.78","202.5.255.142", "TL_Kali", "TL_Desktop", "Falcon_VM_Kali", "Falcon_VM_Win10", "Falcon_VM_WinAD", "Falcon_VM_Win10Eng", "vm1716905592946-4689069-iaas"],
+    "data_path": "/home/ubuntu/allcomponents/DeepCASE/eventDetection/data",
+    "api_token": "eyJhbGciOiJFUzUxMiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ3YXp1aCIsImF1ZCI6IldhenVoIEFQSSBSRVNUIiwibmJmIjoxNzE3MTY3NDk1LCJleHAiOjE3MTcxNjgzOTUsInN1YiI6IndhenVoIiwicnVuX2FzIjpmYWxzZSwicmJhY19yb2xlcyI6WzFdLCJyYmFjX21vZGUiOiJ3aGl0ZSJ9.ARDWxHYMrTmwtQKD3RNpPLvdxZxGehv5U1HKQ0lnVjuGlkAHo23YuoZToEjwnvytSRQGHOdckXSH7_B2gx6hyqNeAZCyTkwaLmMBp7pH8tE1jtNM2hgXtDVCcuy3uXDmT3JwwoUotYkJzfkX4ZZkF5mgcOKYIBpGSwAjEPX1Fuqsn7Xd"
+}

@@ -11,10 +11,17 @@ from datetime import datetime, timedelta, timezone
 import shutil
 import requests
 from requests.auth import HTTPBasicAuth
+import argparse
+from urllib.parse import urljoin
+
 
 # DeepCASE Imports
 from deepcase.preprocessing import Preprocessor
 from deepcase.context_builder import ContextBuilder
+import urllib3
+
+# 禁用https警告
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 設置隨機種子
 seed = 42
@@ -28,6 +35,41 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+def get_agents_in_group(api_url, username, password, group_name):
+    # 獲取 Bearer Token 的 API 路徑
+    token_url = f"{api_url}/security/user/authenticate"
+
+    # 發送 POST 請求獲取 Token
+    response = requests.post(token_url, auth=(username, password), verify=False)
+
+    # 檢查請求狀態碼
+    if response.status_code == 200:
+        token = response.json()['data']['token']
+        
+        # 設定查詢屬於指定組的 API 路徑
+        url = f"{api_url}/groups/{group_name}/agents"
+        
+        # 設定標頭資訊
+        headers = {
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json'
+        }
+        
+        # 發送 GET 請求
+        response = requests.get(url, headers=headers, verify=False)
+        
+        # 檢查請求狀態碼
+        if response.status_code == 200:
+            agents = response.json()['data']['affected_items']
+            agent_names = [agent['name'] for agent in agents]
+            return agent_names
+        else:
+            print(f"Failed to retrieve agents. Status code: {response.status_code}, Response: {response.text}")
+            return []
+    else:
+        print(f"Failed to retrieve token. Status code: {response.status_code}, Response: {response.text}")
+        return []
 
 def get_api_token(wazuh_url, api_user, api_password):
     try:
@@ -83,7 +125,7 @@ def load_config(file_path):
         config = json.load(file)
     return config
 
-def fetch_wazuh_events_by_ip(wazuh_url, username, password, start_date, end_date, agent_name, output_dir, increment_hours=3):
+def fetch_wazuh_events_by_ip(wazuh_url, username, password, start_date, end_date, agent_name, output_dir, increment_hours):
     """
     Fetch Wazuh events by each IP within a specified date range and save the results as JSON files.
 
@@ -102,7 +144,7 @@ def fetch_wazuh_events_by_ip(wazuh_url, username, password, start_date, end_date
     start_dt = datetime.strptime(start_date, "%Y-%m-%dT%H:%M:%S%z")
     end_dt = datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%S%z")
 
-    # 每次增加的秒數（3小時）
+    # 每次增加的秒數（小時）
     increment = timedelta(hours=increment_hours)
 
     # 從開始日期到結束日期循環
@@ -152,6 +194,8 @@ def fetch_wazuh_events_by_ip(wazuh_url, username, password, start_date, end_date
 
         # 增加當前時間
         current_dt += increment
+
+    return output_file
 
 
 class EventIDExtractor:
@@ -220,8 +264,10 @@ class EventIDExtractor:
         if not content:
             os.remove(output_file_path)
             print(f'空白或僅包含換行符號的檔案 "{output_file_path}" 已被刪除。')
+            return True
         else:
             print(f'檔案 "{output_file_path}" 不是空白的。')
+            return False
 
     @staticmethod
     def merge_data(directory, output_file):
@@ -262,46 +308,46 @@ def main(config, debug=False):
     now = datetime.now(timezone(timedelta(hours=8))).replace(minute=0, second=0, microsecond=0)
     start_date = (now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S") + "+08:00"
     end_date = (now - timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S") + "+08:00"
+    
     data_path = config["data_path"]
+    agent_list = get_agents_in_group(config["wazuh_api_url"], config["username_api"], config["password_api"], group_name)
 
-    for agent_name in config["agents"]:
+    for agent_name in agent_list:
+        '''
         EventIDExtractor.delete_all_files_in_directory(data_path + "/convertData/ruleID/")
         EventIDExtractor.delete_all_files_in_directory(data_path + "/convertData/SEID/")
         EventIDExtractor.delete_all_files_in_directory(data_path + "/testData")
-        fetch_wazuh_events_by_ip(
+        '''
+        origianFilePath = fetch_wazuh_events_by_ip(
             wazuh_url=config["wazuh_url"],
             username=config["username"],
             password=config["password"],
             start_date=start_date,
             end_date=end_date,
             agent_name=agent_name,
-            increment_hours=config["increment_hours"],
-            output_dir=data_path + "/testData"
+            output_dir=data_path + "/testData",
+            increment_hours = config["increment_hours"]
         )
 
         # 萃取資料
         filefolder_path = data_path + "/testData"
-        input_file_path = get_json_filefolder(filefolder_path)
         head, sep, tail = filefolder_path.rpartition('/')
         foldername = tail
         ruleID_output_file_path = data_path + '/convertData/ruleID/' + foldername
         SEID_output_file_path = data_path + '/convertData/SEID/' + foldername
 
-        for i in range(len(input_file_path)):
-            head, sep, tail = input_file_path[i].rpartition('/')
-            filename = tail[:-5]
+        head, sep, tail = origianFilePath.rpartition('/')
+        filename = tail[:-5]
 
-            outputFileName = ruleID_output_file_path + "-" + filename + "-ruleID"
-            EventIDExtractor.extract_rule_ids(input_file_path[i], outputFileName)
-            EventIDExtractor.delete_empty_file(outputFileName)
+        outputFilePathRule = ruleID_output_file_path + "-" + filename + "-ruleID"
+        EventIDExtractor.extract_rule_ids(origianFilePath, outputFilePathRule)
+        noFile = EventIDExtractor.delete_empty_file(outputFilePathRule)
 
-            outputFileName = SEID_output_file_path + "-" + filename + "-SEID"
-            EventIDExtractor.extract_SEIDS(input_file_path[i], outputFileName)
-            EventIDExtractor.delete_empty_file(outputFileName)
+        outputFilePathSE = SEID_output_file_path + "-" + filename + "-SEID"
+        EventIDExtractor.extract_SEIDS(origianFilePath, outputFilePathSE)
+        EventIDExtractor.delete_empty_file(outputFilePathSE)
 
-        ruleID_file_path = data_path + "/convertData/ruleID/*-ruleID"
-        files = glob.glob(ruleID_file_path)
-        if not files:
+        if noFile:
             print(f"No ruleID files found for agent {agent_name}.")
             agent_ip = get_agent_ip(config["wazuh_api_url"], config["username_api"], config["password_api"], agent_name)
             custom_json = {
@@ -318,7 +364,6 @@ def main(config, debug=False):
                 print("Formatted JSON:")
                 print(formatted_json)
 
-            es_url = config["elasticsearch_url"]
             headers = {'Content-Type': 'application/json'}
             response = requests.post(es_url, headers=headers, data=formatted_json)
 
@@ -342,11 +387,9 @@ def main(config, debug=False):
         if debug:
             print(f"mapping_train:\n{mapping_train}\n")
 
-        ruleID_file_path = data_path + "/convertData/ruleID/*-ruleID"
-        files = glob.glob(ruleID_file_path)
         # Load test data from file
         context_test, events_test, labels_test, mapping_test = preprocessor.text(
-            path = files[0],
+            path = outputFilePathRule,
             verbose=debug,
         )
         if debug:
@@ -403,16 +446,15 @@ def main(config, debug=False):
 
         # Calculate abnormal rate
         num_of_one = result.count(1)
-        abnormal_rate = num_of_one / len(result)
+        event_total = len(result)
+        abnormal_rate = num_of_one / event_total
 
         if debug:
             print(f"\n異常量：{num_of_one}\n異常率：{abnormal_rate:.2f}\n")
             print(f"偵測結果：\n{result}\nsize: {len(result)}\n\n異常序列：\n{abnormal_list}\nsize: {len(abnormal_list)}\n")
 
-        SEID_file_path = data_path + '/convertData/SEID/*-SEID'
-        files = glob.glob(SEID_file_path)
         # 讀取SEID檔案內容
-        SEID_file_path = files[0]
+        SEID_file_path = outputFilePathSE
         with open(SEID_file_path, 'r') as file:
             data = file.read()
 
@@ -430,12 +472,13 @@ def main(config, debug=False):
         # 寫入 Elasticsearch
         custom_json = {
             "timestamp": start_date_utc,
-            "agent_ip": agent_ip,
-            "abnormal_rate": abnormal_rate,
             "agent_name": agent_name,
-            "abnormal_count": num_of_one,
-            "abnormal_security_event": abnormal_security_event,
-            "abnormal_sequence": abnormal_list,
+            "agent_ip": agent_ip,
+            "score": abnormal_rate,
+            "event.total": event_total,
+            "event.abnormal.count": num_of_one,
+            "event.all.id": SEID_list,
+            "event.abnormal.id": abnormal_security_event
         }
 
         formatted_json = json.dumps(custom_json, indent=4)
@@ -443,7 +486,6 @@ def main(config, debug=False):
             print("Formatted JSON:")
             print(formatted_json)
 
-        es_url = config["elasticsearch_url"]
         headers = {'Content-Type': 'application/json'}
         response = requests.post(es_url, headers=headers, data=formatted_json)
 
@@ -456,10 +498,19 @@ def main(config, debug=False):
     return formatted_json
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="choose the elk index")
+    parser.add_argument("elkIndex", type=str, help="choose the elk index in str")
+    parser.add_argument("group", type=str, help="choose the wazuh group in str")
+    parsed_args = parser.parse_args()
+    es_index = parsed_args.elkIndex
+    group_name = parsed_args.group
+    
     # 獲取當前 Python 檔案的路徑
     current_file_path = os.path.abspath(__file__)
     # 獲取當前 Python 檔案所在的目錄
     current_directory = os.path.dirname(current_file_path)
     config = load_config(current_directory + '/config.json')
+    base_url = config["elasticsearch_url"]
+    es_url = urljoin(base_url, f"{es_index}/_doc/")
     debug_mode = True
     results = main(config, debug=debug_mode)
